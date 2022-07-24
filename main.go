@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"log"
 
 	"github.com/songgao/water"
@@ -23,6 +24,7 @@ type IP struct {
 }
 
 func (ip *IP) Inspect() {
+	fmt.Printf("----- IP Header -----\n")
 	fmt.Printf("IP version:      %d\n", ip.Version)
 	fmt.Printf("Header length:   %d\n", ip.HeaderLength)
 	fmt.Printf("Type of service: %d\n", ip.TypeOfService)
@@ -35,10 +37,124 @@ func (ip *IP) Inspect() {
 	fmt.Printf("Header checksum: %d\n", ip.HeaderChecksum)
 	fmt.Printf("Source IP:       %s\n", formatIPAddress(ip.SourceAddress))
 	fmt.Printf("Dest IP:         %s\n", formatIPAddress(ip.DestinationAddress))
-	fmt.Println("")
 }
 
-func parseIPHeader(raw []byte) (ip IP, err error) {
+type TCP struct {
+	DataOffset, Reserved, ControlBits                            uint8
+	SourcePort, DestinationPort, Window, Checksum, UrgentPointer uint16
+	SequenceNumber, AcknowledgmentNumber                         uint32
+}
+
+func (tcp *TCP) Inspect() {
+	controlBitsSet := []string{}
+	if tcp.ControlBits&0x1 > 0 {
+		controlBitsSet = append(controlBitsSet, "FIN")
+	}
+	if tcp.ControlBits&0x2 > 0 {
+		controlBitsSet = append(controlBitsSet, "SYN")
+	}
+	if tcp.ControlBits&0x4 > 0 {
+		controlBitsSet = append(controlBitsSet, "RST")
+	}
+	if tcp.ControlBits&0x8 > 0 {
+		controlBitsSet = append(controlBitsSet, "PSH")
+	}
+	if tcp.ControlBits&0x10 > 0 {
+		controlBitsSet = append(controlBitsSet, "ACK")
+	}
+	if tcp.ControlBits&0x20 > 0 {
+		controlBitsSet = append(controlBitsSet, "URG")
+	}
+
+	fmt.Printf("----- TCP Header -----\n")
+	fmt.Printf("Source port:            %d\n", tcp.SourcePort)
+	fmt.Printf("Destination port:       %d\n", tcp.DestinationPort)
+	fmt.Printf("Sequence number:        %d\n", tcp.SequenceNumber)
+	fmt.Printf("Acknowledgement number: %d\n", tcp.AcknowledgmentNumber)
+	fmt.Printf("Data offset:            %d\n", tcp.DataOffset)
+	fmt.Printf("Reserved:               %d\n", tcp.Reserved)
+	fmt.Printf("Control bits:           %s\n", controlBitsSet)
+	fmt.Printf("Window:                 %d\n", tcp.Window)
+	fmt.Printf("Checksum:               %d\n", tcp.Checksum)
+	fmt.Printf("Urgent pointer:         %d\n", tcp.UrgentPointer)
+}
+
+func parseTCPHeader(buf *bytes.Reader) (tcp TCP, err error) {
+	/*
+	    0                   1                   2                   3
+	    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	   |          Source Port          |       Destination Port        |
+	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	   |                        Sequence Number                        |
+	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	   |                    Acknowledgment Number                      |
+	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	   |  Data |           |U|A|P|R|S|F|                               |
+	   | Offset| Reserved  |R|C|S|S|Y|I|            Window             |
+	   |       |           |G|K|H|T|N|N|                               |
+	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	   |           Checksum            |         Urgent Pointer        |
+	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	   |                    Options                    |    Padding    |
+	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	   |                             data                              |
+	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+	**/
+
+	err = binary.Read(buf, binary.BigEndian, &tcp.SourcePort)
+	if err != nil {
+		return
+	}
+
+	err = binary.Read(buf, binary.BigEndian, &tcp.DestinationPort)
+	if err != nil {
+		return
+	}
+
+	err = binary.Read(buf, binary.BigEndian, &tcp.SequenceNumber)
+	if err != nil {
+		return
+	}
+
+	err = binary.Read(buf, binary.BigEndian, &tcp.AcknowledgmentNumber)
+	if err != nil {
+		return
+	}
+
+	var temp uint16
+	err = binary.Read(buf, binary.BigEndian, &temp)
+	if err != nil {
+		return
+	}
+
+	tcp.DataOffset = uint8(temp >> 12)
+	tcp.Reserved = uint8(temp>>6) & 0x3F
+	tcp.ControlBits = uint8(temp) & 0x3F
+
+	err = binary.Read(buf, binary.BigEndian, &tcp.Window)
+	if err != nil {
+		return
+	}
+
+	err = binary.Read(buf, binary.BigEndian, &tcp.Checksum)
+	if err != nil {
+		return
+	}
+
+	err = binary.Read(buf, binary.BigEndian, &tcp.UrgentPointer)
+	if err != nil {
+		return
+	}
+
+	// Jump to the end of the header, which comprises `DataOffset` 32-bit words
+	seek := tcp.DataOffset - 5
+	buf.Seek(int64(seek)*4, io.SeekCurrent)
+
+	return
+}
+
+func parseIPHeader(buf *bytes.Reader) (ip IP, err error) {
 	/*
 	    0                   1                   2                   3
 	    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
@@ -56,8 +172,6 @@ func parseIPHeader(raw []byte) (ip IP, err error) {
 	   |                    Options                    |    Padding    |
 	   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 	**/
-
-	buf := bytes.NewBuffer(raw)
 
 	ip.Version, err = buf.ReadByte()
 	if err != nil {
@@ -119,6 +233,9 @@ func parseIPHeader(raw []byte) (ip IP, err error) {
 		return
 	}
 
+	// Jump to the end of the header, which comprises `HeaderLength` 32-bit words
+	buf.Seek(int64(ip.HeaderLength)*4, io.SeekStart)
+
 	return
 }
 
@@ -139,7 +256,9 @@ func main() {
 			log.Fatal(err)
 		}
 
-		ip, err := parseIPHeader(buf[:n])
+		reader := bytes.NewReader(buf[:n])
+
+		ip, err := parseIPHeader(reader)
 		if err == ErrNonIPv4 {
 			continue
 		}
@@ -147,6 +266,17 @@ func main() {
 			log.Fatal(err)
 		}
 
+		if ip.Protocol != 0x06 {
+			// Not TCP
+			continue
+		}
+
+		tcp, err := parseTCPHeader(reader)
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		ip.Inspect()
+		tcp.Inspect()
 	}
 }
