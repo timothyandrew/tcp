@@ -26,21 +26,11 @@ type Connection struct {
 
 	ReceiveNext, ReceiveUrgentPointer, InitialReceiveSequenceNumber uint32
 	ReceiveWindow                                                   uint16
-
-	WriteBuffer []byte
 }
 
 func (c *Connection) Write(buf []byte, quad Quad) (response TCP, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	available := (c.SendUnacknowledged + uint32(c.SendWindow)) - c.SendNext
-
-	if len(buf) > int(available) {
-		return response, fmt.Errorf("write buffer is full")
-	}
-
-	c.WriteBuffer = append(c.WriteBuffer, buf...)
 
 	response.SourcePort = quad.DestinationPort
 	response.DestinationPort = quad.SourcePort
@@ -59,7 +49,6 @@ func (c *Connection) Initialize(header *TCP) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.WriteBuffer = make([]byte, 0, WRITE_BUFFER_BYTES)
 	c.State = "LISTEN"
 
 	c.InitialSendSequenceNumber = rand.Uint32()
