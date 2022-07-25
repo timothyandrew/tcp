@@ -2,14 +2,15 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"log"
 
 	"github.com/songgao/water"
 )
 
-var ErrInvalidIPHeader = fmt.Errorf("failed to parse IP header")
-var ErrNonIPv4 = fmt.Errorf("can't handle non-IPv4 packets")
+type Quad struct {
+	SourceIP, DestinationIP     uint32
+	SourcePort, DestinationPort uint16
+}
 
 func main() {
 	config := water.Config{DeviceType: water.TUN}
@@ -21,6 +22,7 @@ func main() {
 	}
 
 	buf := make([]byte, 1500)
+	connections := make(map[Quad]Connection)
 
 	for {
 		n, err := ifce.Read(buf)
@@ -48,7 +50,37 @@ func main() {
 			log.Fatal(err)
 		}
 
-		ip.Inspect()
-		tcp.Inspect()
+		quad := Quad{
+			SourceIP: ip.SourceAddress, DestinationIP: ip.DestinationAddress,
+			SourcePort: tcp.SourcePort, DestinationPort: tcp.DestinationPort,
+		}
+
+		if _, ok := connections[quad]; !ok {
+			c := Connection{}
+			c.Initialize(&tcp)
+			connections[quad] = c
+		}
+
+		c := connections[quad]
+		respTcp := c.HandleSegment(&tcp, reader)
+
+		respIp := IP{
+			Version:            4,
+			HeaderLength:       5,
+			TotalLength:        10 * 4,
+			TimeToLive:         64,
+			Flags:              2,
+			Protocol:           6,
+			SourceAddress:      ip.DestinationAddress,
+			DestinationAddress: ip.SourceAddress,
+		}
+
+		response := respIp.Serialize()
+		response.Write(respTcp.Serialize(&respIp).Bytes())
+
+		_, err = response.WriteTo(ifce)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 }

@@ -3,8 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 )
+
+var ErrInvalidIPHeader = fmt.Errorf("failed to parse IP header")
+var ErrNonIPv4 = fmt.Errorf("can't handle non-IPv4 packets")
 
 func parseIPHeader(buf *bytes.Reader) (ip IP, err error) {
 	/*
@@ -158,6 +162,8 @@ func parseTCPHeader(buf *bytes.Reader) (tcp TCP, err error) {
 	if err != nil {
 		return
 	}
+
+	// TODO: Parse options
 
 	// Jump to the end of the header, which comprises `DataOffset` 32-bit words
 	seek := tcp.DataOffset - 5

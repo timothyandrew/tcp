@@ -1,15 +1,66 @@
 package main
 
-import "fmt"
-
-func formatIPAddress(addr uint32) string {
-	return fmt.Sprintf("%d.%d.%d.%d", addr>>24, (addr>>16)&0xFF, (addr>>8)&0xFF, addr&0xFF)
-}
+import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
+)
 
 type IP struct {
 	Version, HeaderLength, TypeOfService, Flags, TimeToLive, Protocol uint8
 	TotalLength, Identification, FragmentOffset, HeaderChecksum       uint16
 	SourceAddress, DestinationAddress                                 uint32
+}
+
+func (ip *IP) CalcChecksum() uint16 {
+	var temp1, temp2 uint16
+	temp1 |= uint16(ip.Version) << 12
+	temp1 |= uint16(ip.HeaderLength) << 8
+	temp1 |= uint16(ip.TypeOfService)
+
+	temp2 |= uint16(ip.Flags) << 13
+	temp2 |= uint16(ip.FragmentOffset)
+
+	sum := uint16(0)
+	sum = add1sComplement(sum, temp1)
+	sum = add1sComplement(sum, ip.TotalLength)
+	sum = add1sComplement(sum, ip.Identification)
+	sum = add1sComplement(sum, temp2)
+	sum = add1sComplement(sum, uint16(ip.TimeToLive)<<8)
+	sum = add1sComplement(sum, uint16(ip.Protocol))
+	sum = add1sComplement(sum, uint16(ip.SourceAddress>>16))
+	sum = add1sComplement(sum, uint16(ip.SourceAddress&0xFFFF))
+	sum = add1sComplement(sum, uint16(ip.DestinationAddress>>16))
+	sum = add1sComplement(sum, uint16(ip.DestinationAddress&0xFFFF))
+
+	return ^sum
+}
+
+func (ip *IP) Serialize() *bytes.Buffer {
+	buf := bytes.NewBuffer([]byte{})
+	ip.HeaderChecksum = ip.CalcChecksum()
+
+	var temp uint16
+	temp |= uint16(ip.Version) << 12
+	temp |= uint16(ip.HeaderLength) << 8
+	temp |= uint16(ip.TypeOfService)
+
+	binary.Write(buf, binary.BigEndian, temp)
+	binary.Write(buf, binary.BigEndian, ip.TotalLength)
+	binary.Write(buf, binary.BigEndian, ip.Identification)
+
+	temp = 0
+	temp |= uint16(ip.Flags) << 13
+	temp |= uint16(ip.FragmentOffset)
+
+	binary.Write(buf, binary.BigEndian, temp)
+	buf.WriteByte(ip.TimeToLive)
+	buf.WriteByte(ip.Protocol)
+	binary.Write(buf, binary.BigEndian, ip.HeaderChecksum)
+	binary.Write(buf, binary.BigEndian, ip.SourceAddress)
+	binary.Write(buf, binary.BigEndian, ip.DestinationAddress)
+
+	return buf
 }
 
 func (ip *IP) Inspect() {
@@ -32,6 +83,52 @@ type TCP struct {
 	DataOffset, Reserved, ControlBits                            uint8
 	SourcePort, DestinationPort, Window, Checksum, UrgentPointer uint16
 	SequenceNumber, AcknowledgmentNumber                         uint32
+}
+
+func (t *TCP) CalcChecksum(ip *IP) uint16 {
+	var temp uint16
+	temp |= uint16(t.DataOffset) << 12
+	temp |= uint16(t.ControlBits)
+
+	sum := uint16(0)
+	sum = add1sComplement(sum, uint16(ip.SourceAddress>>16))
+	sum = add1sComplement(sum, uint16(ip.SourceAddress&0xFFFF))
+	sum = add1sComplement(sum, uint16(ip.DestinationAddress>>16))
+	sum = add1sComplement(sum, uint16(ip.DestinationAddress&0xFFFF))
+	sum = add1sComplement(sum, uint16(ip.Protocol))
+	sum = add1sComplement(sum, uint16(20))
+	sum = add1sComplement(sum, t.SourcePort)
+	sum = add1sComplement(sum, t.DestinationPort)
+	sum = add1sComplement(sum, uint16(t.SequenceNumber>>16))
+	sum = add1sComplement(sum, uint16(t.SequenceNumber&0xFFFF))
+	sum = add1sComplement(sum, uint16(t.AcknowledgmentNumber>>16))
+	sum = add1sComplement(sum, uint16(t.AcknowledgmentNumber&0xFFFF))
+	sum = add1sComplement(sum, temp)
+	sum = add1sComplement(sum, t.Window)
+	sum = add1sComplement(sum, t.UrgentPointer)
+
+	return ^sum
+}
+
+func (t *TCP) Serialize(ip *IP) *bytes.Buffer {
+	buf := bytes.NewBuffer([]byte{})
+
+	var temp uint16
+	temp |= uint16(t.DataOffset) << 12
+	temp |= uint16(t.ControlBits)
+
+	t.Checksum = t.CalcChecksum(ip)
+
+	binary.Write(buf, binary.BigEndian, t.SourcePort)
+	binary.Write(buf, binary.BigEndian, t.DestinationPort)
+	binary.Write(buf, binary.BigEndian, t.SequenceNumber)
+	binary.Write(buf, binary.BigEndian, t.AcknowledgmentNumber)
+	binary.Write(buf, binary.BigEndian, temp)
+	binary.Write(buf, binary.BigEndian, t.Window)
+	binary.Write(buf, binary.BigEndian, t.Checksum)
+	binary.Write(buf, binary.BigEndian, t.UrgentPointer)
+
+	return buf
 }
 
 func (tcp *TCP) Inspect() {
