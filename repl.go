@@ -28,7 +28,7 @@ func dispatch(line string, iface *water.Interface, connections *Connections) {
 			fmt.Fprintf(os.Stderr, "conn_id must be a number")
 			return
 		}
-		text := []byte(words[2])
+		text := []byte(strings.TrimSpace(words[2]) + "\n")
 
 		quad := connections.ids[connId]
 		respTcp, err := connections.m[quad].Write(text, quad)

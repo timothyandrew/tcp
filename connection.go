@@ -117,7 +117,7 @@ func (c *Connection) HandleSegment(header *TCP, payload *bytes.Reader) (response
 		}
 
 		c.ReceiveNext = header.SequenceNumber + uint32(n)
-		c.SendUnacknowledged = header.AcknowledgmentNumber + 1
+		c.SendUnacknowledged = header.AcknowledgmentNumber
 
 		// No new data, don't respond with an ACK
 		if n == 0 {

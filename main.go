@@ -23,7 +23,9 @@ type Connections struct {
 func (c *Connections) Inspect() {
 	fmt.Printf("%d connections:\n", len(c.m))
 	for i, quad := range c.ids {
-		fmt.Printf("%d: %+v %v\n", i, quad, c.m[quad])
+		if _, ok := c.m[quad]; ok {
+			fmt.Printf("%d: %+v %v\n", i, quad, c.m[quad])
+		}
 	}
 }
 
@@ -84,7 +86,8 @@ func main() {
 		c := connections.m[quad]
 		respTcp, err := c.HandleSegment(&tcp, reader)
 		if err != nil {
-			log.Println("ERROR: ", err)
+			// Error handling segment, remove connection
+			delete(connections.m, quad)
 			continue
 		}
 
