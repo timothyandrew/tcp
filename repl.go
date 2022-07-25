@@ -16,6 +16,47 @@ func dispatch(line string, iface *water.Interface, connections *Connections) {
 		connections.Inspect()
 	}
 
+	if strings.HasPrefix(line, "close") {
+		words := strings.Split(line, " ")
+		if len(words) != 2 {
+			fmt.Fprintf(os.Stderr, "usage: close <conn_id>\n")
+			return
+		}
+
+		connId, err := strconv.ParseInt(words[1], 10, 64)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "conn_id must be a number")
+			return
+		}
+
+		quad := connections.ids[connId]
+		respTcp, err := connections.m[quad].Close(quad)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to close conn: %s", err.Error())
+			return
+		}
+
+		respIp := IP{
+			Version:            4,
+			HeaderLength:       5,
+			TotalLength:        (10 * 4),
+			TimeToLive:         64,
+			Flags:              2,
+			Protocol:           6,
+			SourceAddress:      quad.DestinationIP,
+			DestinationAddress: quad.SourceIP,
+		}
+
+		response := respIp.Serialize()
+		response.Write(respTcp.Serialize(&respIp, []byte{}).Bytes())
+
+		_, err = response.WriteTo(iface)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to write TCP data on the wire %s", err.Error())
+			return
+		}
+	}
+
 	if strings.HasPrefix(line, "write") {
 		words := strings.Split(line, " ")
 		if len(words) != 3 {
