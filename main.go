@@ -22,7 +22,7 @@ func main() {
 	}
 
 	buf := make([]byte, 1500)
-	connections := make(map[Quad]Connection)
+	connections := make(map[Quad]*Connection)
 
 	for {
 		n, err := ifce.Read(buf)
@@ -58,11 +58,19 @@ func main() {
 		if _, ok := connections[quad]; !ok {
 			c := Connection{}
 			c.Initialize(&tcp)
-			connections[quad] = c
+			connections[quad] = &c
 		}
 
 		c := connections[quad]
-		respTcp := c.HandleSegment(&tcp, reader)
+		respTcp, err := c.HandleSegment(&tcp, reader)
+		if err != nil {
+			log.Println("ERROR: ", err)
+			continue
+		}
+
+		if respTcp == (TCP{}) {
+			continue
+		}
 
 		respIp := IP{
 			Version:            4,
