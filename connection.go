@@ -20,8 +20,9 @@ type Connection struct {
 
 	State ConnectionState
 
-	SendUnacknowledged, SendNext, SendWindow, SendUrgentPointer uint32
-	SendWL1, SendWL2, InitialSendSequenceNumber                 uint32
+	SendWindow                                      uint16
+	SendUnacknowledged, SendNext, SendUrgentPointer uint32
+	SendWL1, SendWL2, InitialSendSequenceNumber     uint32
 
 	ReceiveNext, ReceiveUrgentPointer, InitialReceiveSequenceNumber uint32
 	ReceiveWindow                                                   uint16
@@ -33,7 +34,7 @@ func (c *Connection) Write(buf []byte, quad Quad) (response TCP, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	available := (c.SendUnacknowledged + c.SendWindow) - c.SendNext
+	available := (c.SendUnacknowledged + uint32(c.SendWindow)) - c.SendNext
 
 	if len(buf) > int(available) {
 		return response, fmt.Errorf("write buffer is full")
@@ -64,7 +65,7 @@ func (c *Connection) Initialize(header *TCP) {
 	c.InitialSendSequenceNumber = rand.Uint32()
 	c.SendUnacknowledged = c.InitialSendSequenceNumber
 	c.SendNext = c.InitialSendSequenceNumber + 1
-	c.SendWindow = WRITE_BUFFER_BYTES
+	c.SendWindow = header.Window
 
 	c.InitialReceiveSequenceNumber = header.SequenceNumber
 	c.ReceiveNext = header.SequenceNumber + 1
@@ -104,6 +105,7 @@ func (c *Connection) HandleSegment(header *TCP, payload *bytes.Reader) (response
 
 		c.SendUnacknowledged = header.AcknowledgmentNumber
 		c.SendNext = header.AcknowledgmentNumber
+		c.SendWindow = header.Window
 
 		c.State = "ESTAB"
 		return
@@ -118,6 +120,7 @@ func (c *Connection) HandleSegment(header *TCP, payload *bytes.Reader) (response
 
 		c.ReceiveNext = header.SequenceNumber + uint32(n)
 		c.SendUnacknowledged = header.AcknowledgmentNumber
+		c.SendWindow = header.Window
 
 		// No new data, don't respond with an ACK
 		if n == 0 {
