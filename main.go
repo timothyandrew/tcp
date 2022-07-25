@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"math/rand"
+	"time"
 
 	"github.com/songgao/water"
 )
@@ -26,6 +28,8 @@ func (c *Connections) Inspect() {
 }
 
 func main() {
+	rand.Seed(time.Now().UnixMilli())
+
 	config := water.Config{DeviceType: water.TUN}
 	config.Name = "tun_tcp"
 

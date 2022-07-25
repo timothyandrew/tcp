@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"sync"
 )
@@ -60,7 +61,7 @@ func (c *Connection) Initialize(header *TCP) {
 	c.WriteBuffer = make([]byte, 0, WRITE_BUFFER_BYTES)
 	c.State = "LISTEN"
 
-	c.InitialSendSequenceNumber = 512
+	c.InitialSendSequenceNumber = rand.Uint32()
 	c.SendUnacknowledged = c.InitialSendSequenceNumber
 	c.SendNext = c.InitialSendSequenceNumber + 1
 	c.SendWindow = WRITE_BUFFER_BYTES
