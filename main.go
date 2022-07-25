@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 
 	"github.com/songgao/water"
@@ -10,6 +11,18 @@ import (
 type Quad struct {
 	SourceIP, DestinationIP     uint32
 	SourcePort, DestinationPort uint16
+}
+
+type Connections struct {
+	m   map[Quad]*Connection
+	ids []Quad
+}
+
+func (c *Connections) Inspect() {
+	fmt.Printf("%d connections:\n", len(c.m))
+	for i, quad := range c.ids {
+		fmt.Printf("%d: %+v %v\n", i, quad, c.m[quad])
+	}
 }
 
 func main() {
@@ -22,7 +35,9 @@ func main() {
 	}
 
 	buf := make([]byte, 1500)
-	connections := make(map[Quad]*Connection)
+	connections := Connections{m: make(map[Quad]*Connection)}
+
+	go repl(ifce, &connections)
 
 	for {
 		n, err := ifce.Read(buf)
@@ -55,13 +70,14 @@ func main() {
 			SourcePort: tcp.SourcePort, DestinationPort: tcp.DestinationPort,
 		}
 
-		if _, ok := connections[quad]; !ok {
+		if _, ok := connections.m[quad]; !ok {
 			c := Connection{}
 			c.Initialize(&tcp)
-			connections[quad] = &c
+			connections.m[quad] = &c
+			connections.ids = append(connections.ids, quad)
 		}
 
-		c := connections[quad]
+		c := connections.m[quad]
 		respTcp, err := c.HandleSegment(&tcp, reader)
 		if err != nil {
 			log.Println("ERROR: ", err)
@@ -84,7 +100,7 @@ func main() {
 		}
 
 		response := respIp.Serialize()
-		response.Write(respTcp.Serialize(&respIp).Bytes())
+		response.Write(respTcp.Serialize(&respIp, []byte{}).Bytes())
 
 		_, err = response.WriteTo(ifce)
 		if err != nil {

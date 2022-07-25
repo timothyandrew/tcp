@@ -85,7 +85,7 @@ type TCP struct {
 	SequenceNumber, AcknowledgmentNumber                         uint32
 }
 
-func (t *TCP) CalcChecksum(ip *IP) uint16 {
+func (t *TCP) CalcChecksum(ip *IP, payload []byte) uint16 {
 	var temp uint16
 	temp |= uint16(t.DataOffset) << 12
 	temp |= uint16(t.ControlBits)
@@ -96,7 +96,7 @@ func (t *TCP) CalcChecksum(ip *IP) uint16 {
 	sum = add1sComplement(sum, uint16(ip.DestinationAddress>>16))
 	sum = add1sComplement(sum, uint16(ip.DestinationAddress&0xFFFF))
 	sum = add1sComplement(sum, uint16(ip.Protocol))
-	sum = add1sComplement(sum, uint16(20))
+	sum = add1sComplement(sum, uint16(20+len(payload)))
 	sum = add1sComplement(sum, t.SourcePort)
 	sum = add1sComplement(sum, t.DestinationPort)
 	sum = add1sComplement(sum, uint16(t.SequenceNumber>>16))
@@ -107,17 +107,25 @@ func (t *TCP) CalcChecksum(ip *IP) uint16 {
 	sum = add1sComplement(sum, t.Window)
 	sum = add1sComplement(sum, t.UrgentPointer)
 
+	for i := 0; i < len(payload)/2; i++ {
+		sum = add1sComplement(sum, uint16(payload[i*2])<<8+uint16(payload[(i*2)+1]))
+	}
+
+	if len(payload)%2 != 0 {
+		sum = add1sComplement(sum, uint16(payload[len(payload)-1])<<8+uint16(0x00))
+	}
+
 	return ^sum
 }
 
-func (t *TCP) Serialize(ip *IP) *bytes.Buffer {
+func (t *TCP) Serialize(ip *IP, payload []byte) *bytes.Buffer {
 	buf := bytes.NewBuffer([]byte{})
 
 	var temp uint16
 	temp |= uint16(t.DataOffset) << 12
 	temp |= uint16(t.ControlBits)
 
-	t.Checksum = t.CalcChecksum(ip)
+	t.Checksum = t.CalcChecksum(ip, payload)
 
 	binary.Write(buf, binary.BigEndian, t.SourcePort)
 	binary.Write(buf, binary.BigEndian, t.DestinationPort)
@@ -127,6 +135,8 @@ func (t *TCP) Serialize(ip *IP) *bytes.Buffer {
 	binary.Write(buf, binary.BigEndian, t.Window)
 	binary.Write(buf, binary.BigEndian, t.Checksum)
 	binary.Write(buf, binary.BigEndian, t.UrgentPointer)
+
+	buf.Write(payload)
 
 	return buf
 }
